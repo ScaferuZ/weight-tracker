@@ -1,8 +1,8 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.22-alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache git sqlite-dev
+RUN apk add --no-cache git
 
 # Set working directory
 WORKDIR /app
@@ -15,7 +15,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=1 go build -o weight-tracker ./cmd/server
+RUN CGO_ENABLED=0 go build -tags sqlite_omit_load_extension -o weight-tracker ./cmd/server
 
 # Production stage
 FROM alpine:3.18
