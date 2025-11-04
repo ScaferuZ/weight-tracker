@@ -26,21 +26,36 @@ func AuthMiddleware(userRepo *models.UserRepository) func(http.Handler) http.Han
 				return
 			}
 
-			// For simplicity, we'll just check if a session exists
-			// In a real app, you'd validate the session token
-			// and retrieve the user from the database
-			ctx := context.WithValue(r.Context(), IsAuthKey, true)
+			// Validate session token format (should be "user_" + username)
+			if len(cookie.Value) < 6 || cookie.Value[:5] != "user_" {
+				// Invalid session format
+				ctx := context.WithValue(r.Context(), IsAuthKey, false)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
 
-			// TODO: Implement proper session validation and user retrieval
-			// userID := validateSessionToken(cookie.Value)
-			// if userID != 0 {
-			//     user, err := userRepo.GetByID(userID)
-			//     if err == nil {
-			//         ctx = context.WithValue(ctx, UserIDKey, user.ID)
-			//         ctx = context.WithValue(ctx, UserKey, user)
-			//         ctx = context.WithValue(ctx, IsAuthKey, true)
-			//     }
-			// }
+			// Extract username from session token
+			username := cookie.Value[5:]
+			if username == "" {
+				// Invalid session - no username
+				ctx := context.WithValue(r.Context(), IsAuthKey, false)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+
+			// Verify user exists in database
+			user, err := userRepo.GetByUsername(username)
+			if err != nil {
+				// User not found - invalid session
+				ctx := context.WithValue(r.Context(), IsAuthKey, false)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+
+			// User is authenticated - set context values
+			ctx := context.WithValue(r.Context(), IsAuthKey, true)
+			ctx = context.WithValue(ctx, UserIDKey, user.ID)
+			ctx = context.WithValue(ctx, UserKey, user)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -49,8 +64,15 @@ func AuthMiddleware(userRepo *models.UserRepository) func(http.Handler) http.Han
 
 func RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		isAuthenticated := r.Context().Value(IsAuthKey).(bool)
-		if !isAuthenticated {
+		// Check if user is authenticated
+		authValue := r.Context().Value(IsAuthKey)
+		if authValue == nil {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		isAuthenticated, ok := authValue.(bool)
+		if !ok || !isAuthenticated {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}

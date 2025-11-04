@@ -73,21 +73,51 @@ mux.HandleFunc("/health", healthHandler.Health)
 	protectedMux.HandleFunc("/api/chart/weight-data", chartHandler.GetWeightChartData)
 	protectedMux.HandleFunc("/api/chart/weight-stats", chartHandler.GetWeightStats)
 
+	// Apply auth middleware to public routes
+	authenticatedMux := authMiddleware(mux)
+
 	// Create a handler that routes between protected and public routes
 	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Protected routes
+		// Protected routes - apply combined auth middleware
 		if r.URL.Path == "/weights" ||
 			(r.URL.Path == "/weights/" && r.Method == http.MethodPost) ||
 			r.URL.Path == "/api/chart/weight-data" ||
 			r.URL.Path == "/api/chart/weight-stats" {
-			protectedHandler := middleware.RequireAuth(authMiddleware(protectedMux))
-			protectedHandler.ServeHTTP(w, r)
+
+			// Combined authentication and authorization
+			authHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Check for session cookie
+				cookie, err := r.Cookie("session_token")
+				if err != nil || cookie.Value == "" {
+					http.Redirect(w, r, "/login", http.StatusSeeOther)
+					return
+				}
+
+				// Validate session token format
+				if len(cookie.Value) < 6 || cookie.Value[:5] != "user_" {
+					http.Redirect(w, r, "/login", http.StatusSeeOther)
+					return
+				}
+
+				// Extract username and verify user exists
+				username := cookie.Value[5:]
+				userRepo := models.NewUserRepository(app.db)
+				_, err = userRepo.GetByUsername(username)
+				if err != nil {
+					http.Redirect(w, r, "/login", http.StatusSeeOther)
+					return
+				}
+
+				// User is authenticated - proceed to protected handler
+				protectedMux.ServeHTTP(w, r)
+			})
+
+			authHandler.ServeHTTP(w, r)
 			return
 		}
 
-		// Public routes with auth middleware (to check authentication status)
-		publicHandler := authMiddleware(mux)
-		publicHandler.ServeHTTP(w, r)
+		// Public routes (already have auth middleware applied)
+		authenticatedMux.ServeHTTP(w, r)
 	})
 
 	// Apply global middleware
