@@ -16,12 +16,35 @@ type WeightHandler struct {
 }
 
 func NewWeightHandler(db *sql.DB) *WeightHandler {
-	tmpl := template.Must(template.ParseGlob("templates/*.html"))
-	tmpl = template.Must(tmpl.ParseGlob("templates/partials/*.html"))
+	// Parse layout template first
+	layoutContent, err := template.ParseFiles("templates/layout.html")
+	if err != nil {
+		panic(err)
+	}
+
+	// Parse weights template
+	weightsContent, err := template.ParseFiles("templates/weights.html")
+	if err != nil {
+		panic(err)
+	}
+
+	// Parse partials
+	partials, err := template.ParseGlob("templates/partials/*.html")
+	if err != nil {
+		panic(err)
+	}
+
+	// Add all templates to the main template
+	for _, t := range weightsContent.Templates() {
+		layoutContent.AddParseTree(t.Name(), t.Tree)
+	}
+	for _, t := range partials.Templates() {
+		layoutContent.AddParseTree(t.Name(), t.Tree)
+	}
 
 	return &WeightHandler{
 		weightRepo: models.NewWeightRepository(db),
-		tmpl:       tmpl,
+		tmpl:       layoutContent,
 	}
 }
 
@@ -48,7 +71,8 @@ func (h *WeightHandler) ShowWeights(w http.ResponseWriter, r *http.Request) {
 		"TodayWeight":  todayWeight,
 	}
 
-	h.tmpl.ExecuteTemplate(w, "weights.html", data)
+	data["Title"] = "Weight History"
+	h.tmpl.ExecuteTemplate(w, "base", data)
 }
 
 func (h *WeightHandler) CreateWeight(w http.ResponseWriter, r *http.Request) {

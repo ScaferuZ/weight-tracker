@@ -11,11 +11,34 @@ type PageHandler struct {
 }
 
 func NewPageHandler() *PageHandler {
-	tmpl := template.Must(template.ParseGlob("templates/*.html"))
-	tmpl = template.Must(tmpl.ParseGlob("templates/partials/*.html"))
+	// Parse layout template first
+	layoutContent, err := template.ParseFiles("templates/layout.html")
+	if err != nil {
+		panic(err)
+	}
+
+	// Parse home template
+	homeContent, err := template.ParseFiles("templates/home.html")
+	if err != nil {
+		panic(err)
+	}
+
+	// Parse partials
+	partials, err := template.ParseGlob("templates/partials/*.html")
+	if err != nil {
+		panic(err)
+	}
+
+	// Add all templates to the main template
+	for _, t := range homeContent.Templates() {
+		layoutContent.AddParseTree(t.Name(), t.Tree)
+	}
+	for _, t := range partials.Templates() {
+		layoutContent.AddParseTree(t.Name(), t.Tree)
+	}
 
 	return &PageHandler{
-		tmpl: tmpl,
+		tmpl: layoutContent,
 	}
 }
 
@@ -25,7 +48,10 @@ func (h *PageHandler) Home(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.tmpl.ExecuteTemplate(w, "home.html", nil)
+	data := map[string]interface{}{
+		"Title": "Home",
+	}
+	h.tmpl.ExecuteTemplate(w, "base", data)
 }
 
 func (h *PageHandler) NotFound(w http.ResponseWriter, r *http.Request) {
