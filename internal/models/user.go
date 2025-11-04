@@ -2,6 +2,7 @@ package models
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -24,20 +25,31 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 }
 
 func (r *UserRepository) Create(username, password string) (*User, error) {
+	// Validate inputs
+	if username == "" || password == "" {
+		return nil, fmt.Errorf("username and password cannot be empty")
+	}
+	if len(username) < 3 {
+		return nil, fmt.Errorf("username must be at least 3 characters")
+	}
+	if len(password) < 6 {
+		return nil, fmt.Errorf("password must be at least 6 characters")
+	}
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
 	query := `INSERT INTO users (username, password_hash) VALUES (?, ?)`
 	result, err := r.db.Exec(query, username, string(hashedPassword))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
 	id, err := result.LastInsertId()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get user ID: %w", err)
 	}
 
 	user := &User{

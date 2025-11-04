@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"html/template"
+	"log"
 	"net/http"
 	"time"
 	"weight-tracker/internal/models"
@@ -25,7 +26,10 @@ func NewAuthHandler(db *sql.DB) *AuthHandler {
 
 func (h *AuthHandler) ShowLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		h.tmpl.ExecuteTemplate(w, "login.html", nil)
+		data := map[string]interface{}{
+			"Registered": r.URL.Query().Get("registered") == "true",
+		}
+		h.tmpl.ExecuteTemplate(w, "login.html", data)
 		return
 	}
 
@@ -105,8 +109,16 @@ func (h *AuthHandler) ShowRegister(w http.ResponseWriter, r *http.Request) {
 	// Create new user
 	_, err = h.userRepo.Create(username, password)
 	if err != nil {
+		log.Printf("Failed to create user %s: %v", username, err)
+		errorMsg := "Failed to create user"
+		// Provide more specific error messages for debugging
+		if err.Error() == "UNIQUE constraint failed" {
+			errorMsg = "Username already exists"
+		} else if err.Error() == "database is locked" {
+			errorMsg = "Database busy, please try again"
+		}
 		h.tmpl.ExecuteTemplate(w, "register.html", map[string]interface{}{
-			"Error": "Failed to create user",
+			"Error": errorMsg,
 		})
 		return
 	}
