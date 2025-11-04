@@ -1,0 +1,206 @@
+{{define "title"}}Weight History{{end}}
+
+{{define "content"}}
+{{template "layout" .}}
+<div class="max-w-6xl mx-auto">
+    <!-- Statistics Dashboard -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div class="bg-white shadow rounded-lg p-4">
+            <div class="text-sm font-medium text-gray-500">Current Weight</div>
+            <div id="current-weight" class="text-2xl font-bold text-gray-900">-</div>
+        </div>
+        <div class="bg-white shadow rounded-lg p-4">
+            <div class="text-sm font-medium text-gray-500">7 Day Change</div>
+            <div id="change-7-days" class="text-2xl font-bold text-gray-900">-</div>
+        </div>
+        <div class="bg-white shadow rounded-lg p-4">
+            <div class="text-sm font-medium text-gray-500">30 Day Change</div>
+            <div id="change-30-days" class="text-2xl font-bold text-gray-900">-</div>
+        </div>
+        <div class="bg-white shadow rounded-lg p-4">
+            <div class="text-sm font-medium text-gray-500">Average Weight</div>
+            <div id="average-weight" class="text-2xl font-bold text-gray-900">-</div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        <!-- Weight Entry Form -->
+        <div class="bg-white shadow rounded-lg p-6">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6">
+                {{if .HasTodayEntry}}Update Today's Weight{{else}}Log Today's Weight{{end}}
+            </h2>
+
+            <form
+                hx-post="/weights"
+                hx-target="#weight-list-container"
+                hx-swap="innerHTML"
+                hx-on::after-request="loadChart(); loadStats();"
+                class="space-y-4">
+
+                <div class="space-y-4">
+                    <div>
+                        <label for="weight" class="block text-sm font-medium text-gray-700">Weight (kg)</label>
+                        <input
+                            type="number"
+                            id="weight"
+                            name="weight"
+                            step="0.1"
+                            min="20"
+                            max="500"
+                            required
+                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Enter your weight"
+                            {{if .TodayWeight}}value="{{.TodayWeight.WeightKg}}"{{end}}
+                        >
+                    </div>
+
+                    <div>
+                        <label for="notes" class="block text-sm font-medium text-gray-700">Notes (optional)</label>
+                        <textarea
+                            id="notes"
+                            name="notes"
+                            rows="2"
+                            maxlength="500"
+                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Any notes about today's weight">{{if .TodayWeight}}{{.TodayWeight.Notes}}{{end}}</textarea>
+                    </div>
+                </div>
+
+                <button
+                    type="submit"
+                    class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    {{if .HasTodayEntry}}Update Today's Weight{{else}}Log Today's Weight{{end}}
+                </button>
+            </form>
+        </div>
+
+        <!-- Weight Progress Chart -->
+        <div class="bg-white shadow rounded-lg p-6">
+            <h3 class="text-xl font-semibold text-gray-900 mb-4">Weight Progress (90 Days)</h3>
+            <div class="relative h-80">
+                <canvas id="weightChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Weight History Table -->
+    <div class="bg-white shadow rounded-lg p-6">
+        <h3 class="text-xl font-semibold text-gray-900 mb-4">Weight History</h3>
+
+        <div id="weight-list-container">
+            {{template "weight_list" .}}
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    let weightChart;
+
+    function loadChart() {
+        fetch('/api/chart/weight-data')
+            .then(response => response.json())
+            .then(data => {
+                const ctx = document.getElementById('weightChart').getContext('2d');
+
+                if (weightChart) {
+                    weightChart.destroy();
+                }
+
+                weightChart = new Chart(ctx, {
+                    type: 'line',
+                    data: data,
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    label: function(context) {
+                                        return 'Weight: ' + context.parsed.y.toFixed(1) + ' kg';
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                display: true,
+                                title: {
+                                    display: true,
+                                    text: 'Date'
+                                }
+                            },
+                            y: {
+                                display: true,
+                                title: {
+                                    display: true,
+                                    text: 'Weight (kg)'
+                                }
+                            }
+                        },
+                        interaction: {
+                            mode: 'nearest',
+                            axis: 'x',
+                            intersect: false
+                        }
+                    }
+                });
+            })
+            .catch(error => {
+                console.error('Error loading chart:', error);
+            });
+    }
+
+    function loadStats() {
+        fetch('/api/chart/weight-stats')
+            .then(response => response.json())
+            .then(stats => {
+                document.getElementById('current-weight').textContent =
+                    stats.current_weight ? stats.current_weight.toFixed(1) + ' kg' : '-';
+
+                const change7Days = document.getElementById('change-7-days');
+                if (stats.change_7_days) {
+                    const change = stats.change_7_days;
+                    change7Days.textContent = (change >= 0 ? '+' : '') + change.toFixed(1) + ' kg';
+                    change7Days.className = `text-2xl font-bold ${change >= 0 ? 'text-red-600' : 'text-green-600'}`;
+                } else {
+                    change7Days.textContent = '-';
+                }
+
+                const change30Days = document.getElementById('change-30-days');
+                if (stats.change_30_days) {
+                    const change = stats.change_30_days;
+                    change30Days.textContent = (change >= 0 ? '+' : '') + change.toFixed(1) + ' kg';
+                    change30Days.className = `text-2xl font-bold ${change >= 0 ? 'text-red-600' : 'text-green-600'}`;
+                } else {
+                    change30Days.textContent = '-';
+                }
+
+                document.getElementById('average-weight').textContent =
+                    stats.average_weight ? stats.average_weight.toFixed(1) + ' kg' : '-';
+            })
+            .catch(error => {
+                console.error('Error loading stats:', error);
+            });
+    }
+
+    // Load chart and stats when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        loadChart();
+        loadStats();
+    });
+
+    // Refresh chart when HTMX requests complete
+    document.addEventListener('htmx:afterRequest', function(evt) {
+        if (evt.detail.target.id === 'weight-list-container') {
+            loadChart();
+            loadStats();
+        }
+    });
+</script>
+{{end}}
